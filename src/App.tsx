@@ -13,6 +13,7 @@ import PackagesPage from "@/pages/admin/Packages";
 import CodesPage from "@/pages/admin/Codes";
 import PaymentsPage from "@/pages/admin/Payments";
 import ReportsPage from "@/pages/admin/Reports";
+import RouterSetup from "@/pages/admin/RouterSetup";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -40,6 +41,7 @@ const App = () => (
               <Route path="codes" element={<CodesPage />} />
               <Route path="payments" element={<PaymentsPage />} />
               <Route path="reports" element={<ReportsPage />} />
+              <Route path="router-setup" element={<RouterSetup />} />
             </Route>
             <Route path="*" element={<NotFound />} />
           </Routes>
