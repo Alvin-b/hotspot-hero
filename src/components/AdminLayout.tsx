@@ -10,6 +10,7 @@ import {
   Wifi,
   Menu,
   X,
+  Router,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useAuth } from "@/contexts/AuthContext";
@@ -21,6 +22,7 @@ const navItems = [
   { to: "/admin/codes", icon: KeyRound, label: "Codes" },
   { to: "/admin/payments", icon: CreditCard, label: "Payments" },
   { to: "/admin/reports", icon: BarChart3, label: "Reports" },
+  { to: "/admin/router-setup", icon: Router, label: "Router Setup" },
 ];
 
 export default function AdminLayout() {
