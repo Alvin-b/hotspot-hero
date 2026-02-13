@@ -1,27 +1,40 @@
 import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Users, DollarSign, KeyRound, Package } from "lucide-react";
+import { DollarSign, KeyRound, Package, Loader2 } from "lucide-react";
 
 export default function AdminDashboard() {
-  const { data: stats } = useQuery({
-    queryKey: ["admin-stats"],
+  const { data: activeCodes = 0 } = useQuery({
+    queryKey: ["admin-active-codes"],
     queryFn: async () => {
-      const [codes, orders, packages] = await Promise.all([
-        supabase.from("connection_codes").select("id", { count: "exact" }).eq("status", "active"),
-        supabase.from("orders").select("amount").eq("status", "paid"),
-        supabase.from("packages").select("id", { count: "exact" }).eq("status", "active"),
-      ]);
-      const totalRevenue = (orders.data || []).reduce((sum, o) => sum + Number(o.amount), 0);
-      return {
-        activeCodes: codes.count || 0,
-        totalRevenue,
-        activePackages: packages.count || 0,
-      };
+      const { count } = await supabase
+        .from("connection_codes")
+        .select("id", { count: "exact", head: true })
+        .eq("status", "active");
+      return count || 0;
     },
   });
 
-  const { data: recentPayments = [] } = useQuery({
+  const { data: totalRevenue = 0 } = useQuery({
+    queryKey: ["admin-revenue"],
+    queryFn: async () => {
+      const { data } = await supabase.from("orders").select("amount").eq("status", "paid");
+      return (data || []).reduce((sum, o) => sum + Number(o.amount), 0);
+    },
+  });
+
+  const { data: activePackages = 0 } = useQuery({
+    queryKey: ["admin-packages-count"],
+    queryFn: async () => {
+      const { count } = await supabase
+        .from("packages")
+        .select("id", { count: "exact", head: true })
+        .eq("status", "active");
+      return count || 0;
+    },
+  });
+
+  const { data: recentPayments = [], isLoading: paymentsLoading } = useQuery({
     queryKey: ["recent-payments"],
     queryFn: async () => {
       const { data } = await supabase
@@ -34,9 +47,9 @@ export default function AdminDashboard() {
   });
 
   const cards = [
-    { label: "Active Codes", value: stats?.activeCodes ?? 0, icon: KeyRound, color: "text-primary" },
-    { label: "Total Revenue", value: `KES ${stats?.totalRevenue?.toLocaleString() ?? 0}`, icon: DollarSign, color: "text-accent" },
-    { label: "Active Packages", value: stats?.activePackages ?? 0, icon: Package, color: "text-info" },
+    { label: "Active Codes", value: activeCodes, icon: KeyRound, color: "text-primary" },
+    { label: "Total Revenue", value: `KES ${totalRevenue.toLocaleString()}`, icon: DollarSign, color: "text-accent" },
+    { label: "Active Packages", value: activePackages, icon: Package, color: "text-info" },
   ];
 
   return (
@@ -62,8 +75,12 @@ export default function AdminDashboard() {
           <CardTitle className="font-display text-lg">Recent Payments</CardTitle>
         </CardHeader>
         <CardContent>
-          {recentPayments.length === 0 ? (
-            <p className="text-sm text-muted-foreground">No payments yet</p>
+          {paymentsLoading ? (
+            <div className="flex justify-center py-8">
+              <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+            </div>
+          ) : recentPayments.length === 0 ? (
+            <p className="py-4 text-center text-sm text-muted-foreground">No payments yet</p>
           ) : (
             <div className="space-y-3">
               {recentPayments.map((p: any) => (

@@ -2,21 +2,59 @@ import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Plus, Pencil, Trash2, Loader2 } from "lucide-react";
 import { toast } from "sonner";
+
+type DurationUnit = "minutes" | "hours" | "days" | "weeks" | "months";
 
 interface PkgForm {
   name: string;
   price: string;
-  duration_minutes: string;
+  duration_value: string;
+  duration_unit: DurationUnit;
   speed_limit: string;
 }
 
-const emptyForm: PkgForm = { name: "", price: "", duration_minutes: "", speed_limit: "2M/2M" };
+const emptyForm: PkgForm = {
+  name: "",
+  price: "",
+  duration_value: "",
+  duration_unit: "hours",
+  speed_limit: "2M/2M",
+};
+
+const unitToMinutes: Record<DurationUnit, number> = {
+  minutes: 1,
+  hours: 60,
+  days: 1440,
+  weeks: 10080,
+  months: 43200,
+};
+
+const minutesToBestUnit = (minutes: number): { value: number; unit: DurationUnit } => {
+  if (minutes % 43200 === 0) return { value: minutes / 43200, unit: "months" };
+  if (minutes % 10080 === 0) return { value: minutes / 10080, unit: "weeks" };
+  if (minutes % 1440 === 0) return { value: minutes / 1440, unit: "days" };
+  if (minutes % 60 === 0) return { value: minutes / 60, unit: "hours" };
+  return { value: minutes, unit: "minutes" };
+};
+
+const formatDuration = (minutes: number) => {
+  const { value, unit } = minutesToBestUnit(minutes);
+  const labels: Record<DurationUnit, string> = {
+    minutes: value === 1 ? "minute" : "minutes",
+    hours: value === 1 ? "hour" : "hours",
+    days: value === 1 ? "day" : "days",
+    weeks: value === 1 ? "week" : "weeks",
+    months: value === 1 ? "month" : "months",
+  };
+  return `${value} ${labels[unit]}`;
+};
 
 export default function PackagesPage() {
   const qc = useQueryClient();
@@ -35,10 +73,14 @@ export default function PackagesPage() {
 
   const saveMutation = useMutation({
     mutationFn: async () => {
+      const durationMinutes =
+        parseInt(form.duration_value) * unitToMinutes[form.duration_unit];
+      if (isNaN(durationMinutes) || durationMinutes <= 0) throw new Error("Invalid duration");
+
       const payload = {
         name: form.name,
         price: parseFloat(form.price),
-        duration_minutes: parseInt(form.duration_minutes),
+        duration_minutes: durationMinutes,
         speed_limit: form.speed_limit,
       };
       if (editId) {
@@ -72,11 +114,13 @@ export default function PackagesPage() {
   });
 
   const openEdit = (pkg: any) => {
+    const { value, unit } = minutesToBestUnit(pkg.duration_minutes);
     setEditId(pkg.id);
     setForm({
       name: pkg.name,
       price: String(pkg.price),
-      duration_minutes: String(pkg.duration_minutes),
+      duration_value: String(value),
+      duration_unit: unit,
       speed_limit: pkg.speed_limit || "2M/2M",
     });
     setDialogOpen(true);
@@ -107,13 +151,13 @@ export default function PackagesPage() {
             <TableBody>
               {isLoading ? (
                 <TableRow>
-                  <TableCell colSpan={6} className="text-center py-8">
+                  <TableCell colSpan={6} className="py-8 text-center">
                     <Loader2 className="mx-auto h-5 w-5 animate-spin" />
                   </TableCell>
                 </TableRow>
               ) : packages.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={6} className="text-center py-8 text-muted-foreground">
+                  <TableCell colSpan={6} className="py-8 text-center text-muted-foreground">
                     No packages yet
                   </TableCell>
                 </TableRow>
@@ -122,7 +166,7 @@ export default function PackagesPage() {
                   <TableRow key={pkg.id}>
                     <TableCell className="font-medium">{pkg.name}</TableCell>
                     <TableCell>{pkg.price}</TableCell>
-                    <TableCell>{pkg.duration_minutes} min</TableCell>
+                    <TableCell>{formatDuration(pkg.duration_minutes)}</TableCell>
                     <TableCell>{pkg.speed_limit}</TableCell>
                     <TableCell>
                       <span className={`text-xs font-medium ${pkg.status === "active" ? "text-primary" : "text-muted-foreground"}`}>
@@ -158,14 +202,36 @@ export default function PackagesPage() {
               <label className="mb-1 block text-sm font-medium">Name</label>
               <Input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} placeholder="e.g. 1 Hour" />
             </div>
-            <div className="grid grid-cols-2 gap-4">
-              <div>
-                <label className="mb-1 block text-sm font-medium">Price (KES)</label>
-                <Input type="number" value={form.price} onChange={(e) => setForm({ ...form, price: e.target.value })} placeholder="20" />
-              </div>
-              <div>
-                <label className="mb-1 block text-sm font-medium">Duration (minutes)</label>
-                <Input type="number" value={form.duration_minutes} onChange={(e) => setForm({ ...form, duration_minutes: e.target.value })} placeholder="60" />
+            <div>
+              <label className="mb-1 block text-sm font-medium">Price (KES)</label>
+              <Input type="number" value={form.price} onChange={(e) => setForm({ ...form, price: e.target.value })} placeholder="20" />
+            </div>
+            <div>
+              <label className="mb-1 block text-sm font-medium">Duration</label>
+              <div className="flex gap-2">
+                <Input
+                  type="number"
+                  value={form.duration_value}
+                  onChange={(e) => setForm({ ...form, duration_value: e.target.value })}
+                  placeholder="1"
+                  className="flex-1"
+                  min={1}
+                />
+                <Select
+                  value={form.duration_unit}
+                  onValueChange={(v) => setForm({ ...form, duration_unit: v as DurationUnit })}
+                >
+                  <SelectTrigger className="w-32">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="minutes">Minutes</SelectItem>
+                    <SelectItem value="hours">Hours</SelectItem>
+                    <SelectItem value="days">Days</SelectItem>
+                    <SelectItem value="weeks">Weeks</SelectItem>
+                    <SelectItem value="months">Months</SelectItem>
+                  </SelectContent>
+                </Select>
               </div>
             </div>
             <div>
