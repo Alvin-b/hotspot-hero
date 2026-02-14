@@ -1,49 +1,47 @@
 import { useQuery } from "@tanstack/react-query";
-import { supabase } from "@/integrations/supabase/client";
+import { useAuth } from "@/contexts/AuthContext";
+import { supabaseAuthFetch, supabaseAuthCount } from "@/lib/supabase-fetch";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { DollarSign, KeyRound, Package, Loader2 } from "lucide-react";
 
 export default function AdminDashboard() {
+  const { session } = useAuth();
+  const token = session?.access_token || "";
+
   const { data: activeCodes = 0 } = useQuery({
-    queryKey: ["admin-active-codes"],
-    queryFn: async () => {
-      const { count } = await supabase
-        .from("connection_codes")
-        .select("id", { count: "exact", head: true })
-        .eq("status", "active");
-      return count || 0;
-    },
+    queryKey: ["admin-active-codes", token],
+    queryFn: () => supabaseAuthCount("connection_codes", "status=eq.active", token),
+    enabled: !!token,
+    retry: 1,
   });
 
   const { data: totalRevenue = 0 } = useQuery({
-    queryKey: ["admin-revenue"],
+    queryKey: ["admin-revenue", token],
     queryFn: async () => {
-      const { data } = await supabase.from("orders").select("amount").eq("status", "paid");
-      return (data || []).reduce((sum, o) => sum + Number(o.amount), 0);
+      const data = await supabaseAuthFetch<any[]>("orders", "status=eq.paid&select=amount", token);
+      return (data || []).reduce((sum: number, o: any) => sum + Number(o.amount), 0);
     },
+    enabled: !!token,
+    retry: 1,
   });
 
   const { data: activePackages = 0 } = useQuery({
-    queryKey: ["admin-packages-count"],
-    queryFn: async () => {
-      const { count } = await supabase
-        .from("packages")
-        .select("id", { count: "exact", head: true })
-        .eq("status", "active");
-      return count || 0;
-    },
+    queryKey: ["admin-packages-count", token],
+    queryFn: () => supabaseAuthCount("packages", "status=eq.active", token),
+    enabled: !!token,
+    retry: 1,
   });
 
   const { data: recentPayments = [], isLoading: paymentsLoading } = useQuery({
-    queryKey: ["recent-payments"],
-    queryFn: async () => {
-      const { data } = await supabase
-        .from("orders")
-        .select("*, packages(name)")
-        .order("created_at", { ascending: false })
-        .limit(10);
-      return data || [];
-    },
+    queryKey: ["recent-payments", token],
+    queryFn: () =>
+      supabaseAuthFetch<any[]>(
+        "orders",
+        "select=*,packages(name)&order=created_at.desc&limit=10",
+        token
+      ),
+    enabled: !!token,
+    retry: 1,
   });
 
   const cards = [

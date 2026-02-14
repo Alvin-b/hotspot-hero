@@ -1,10 +1,11 @@
 import { useState } from "react";
 import { Wifi, Clock, Zap, Phone, ArrowRight, CheckCircle, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { useQuery } from "@tanstack/react-query";
+import { supabaseFetch } from "@/lib/supabase-fetch";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 
@@ -29,17 +30,15 @@ export default function CaptivePortal() {
     package_name: string;
   } | null>(null);
 
-  const { data: packages = [], isLoading } = useQuery({
+  const { data: packages = [], isLoading, isError } = useQuery({
     queryKey: ["packages"],
     queryFn: async () => {
-      const { data, error } = await supabase
-        .from("packages")
-        .select("*")
-        .eq("status", "active")
-        .order("price", { ascending: true });
-      if (error) throw error;
-      return data as Package[];
+      return supabaseFetch<Package[]>({
+        table: "packages",
+        query: "status=eq.active&order=price.asc",
+      });
     },
+    retry: 1,
   });
 
   const formatDuration = (minutes: number) => {
@@ -63,30 +62,32 @@ export default function CaptivePortal() {
       if (error) throw error;
       if (data?.error) throw new Error(data.error);
       toast.success("STK Push sent! Check your phone to complete payment.");
-      // Poll for payment completion
       const orderId = data.order_id;
       const poll = setInterval(async () => {
-        const { data: order } = await supabase
-          .from("orders")
-          .select("status")
-          .eq("id", orderId)
-          .maybeSingle();
-        if (order?.status === "paid") {
-          clearInterval(poll);
-          const { data: code } = await supabase
-            .from("connection_codes")
-            .select("code")
-            .eq("order_id", orderId)
-            .maybeSingle();
-          if (code) {
-            setPaymentCode(code.code);
-            setSelectedPkg(null);
+        try {
+          const orders = await supabaseFetch<any[]>({
+            table: "orders",
+            query: `id=eq.${orderId}&select=status`,
+          });
+          const order = orders?.[0];
+          if (order?.status === "paid") {
+            clearInterval(poll);
+            const codes = await supabaseFetch<any[]>({
+              table: "connection_codes",
+              query: `order_id=eq.${orderId}&select=code`,
+            });
+            if (codes?.[0]) {
+              setPaymentCode(codes[0].code);
+              setSelectedPkg(null);
+            }
+            setPaying(false);
+          } else if (order?.status === "failed") {
+            clearInterval(poll);
+            toast.error("Payment failed. Please try again.");
+            setPaying(false);
           }
-          setPaying(false);
-        } else if (order?.status === "failed") {
-          clearInterval(poll);
-          toast.error("Payment failed. Please try again.");
-          setPaying(false);
+        } catch {
+          // Silently retry polling
         }
       }, 3000);
       setTimeout(() => {
@@ -110,27 +111,34 @@ export default function CaptivePortal() {
     }
     setLoggingIn(true);
     try {
-      const { data, error } = await supabase
-        .from("connection_codes")
-        .select("code, expires_at, status, packages(name)")
-        .eq("code", code)
-        .eq("status", "active")
-        .maybeSingle();
-      if (error) throw error;
-      if (!data) {
+      const data = await supabaseFetch<any[]>({
+        table: "connection_codes",
+        query: `code=eq.${code}&status=eq.active&select=code,expires_at,status,package_id`,
+      });
+      const record = data?.[0];
+      if (!record) {
         toast.error("Invalid or expired code");
         setLoggingIn(false);
         return;
       }
-      if (new Date(data.expires_at) < new Date()) {
+      if (new Date(record.expires_at) < new Date()) {
         toast.error("This code has expired");
         setLoggingIn(false);
         return;
       }
+      // Fetch package name
+      let pkgName = "Unknown";
+      try {
+        const pkgs = await supabaseFetch<any[]>({
+          table: "packages",
+          query: `id=eq.${record.package_id}&select=name`,
+        });
+        if (pkgs?.[0]) pkgName = pkgs[0].name;
+      } catch {}
       setConnectedCode({
-        code: data.code,
-        expires_at: data.expires_at,
-        package_name: (data.packages as any)?.name || "Unknown",
+        code: record.code,
+        expires_at: record.expires_at,
+        package_name: pkgName,
       });
       toast.success("Connected! Enjoy your internet.");
     } catch (e: any) {
@@ -175,7 +183,6 @@ export default function CaptivePortal() {
 
   return (
     <div className="min-h-screen bg-background">
-      {/* Header */}
       <header className="border-b bg-card px-4 py-6 text-center">
         <div className="flex items-center justify-center gap-2">
           <Wifi className="h-8 w-8 text-primary" />
@@ -185,7 +192,6 @@ export default function CaptivePortal() {
       </header>
 
       <main className="mx-auto max-w-lg space-y-6 p-4">
-        {/* Login Section */}
         <Card>
           <CardHeader>
             <CardTitle className="font-display text-lg">Already have a code?</CardTitle>
@@ -206,12 +212,19 @@ export default function CaptivePortal() {
           </CardContent>
         </Card>
 
-        {/* Packages */}
         <div>
           <h2 className="mb-3 font-display text-lg font-semibold">Buy a Package</h2>
           {isLoading ? (
             <div className="flex justify-center py-8">
               <Loader2 className="h-6 w-6 animate-spin text-primary" />
+            </div>
+          ) : isError ? (
+            <div className="py-8 text-center">
+              <p className="text-sm text-destructive">Failed to load packages. Please refresh the page.</p>
+            </div>
+          ) : packages.length === 0 ? (
+            <div className="py-8 text-center">
+              <p className="text-sm text-muted-foreground">No packages available at the moment.</p>
             </div>
           ) : (
             <div className="grid gap-3">
@@ -245,7 +258,6 @@ export default function CaptivePortal() {
           )}
         </div>
 
-        {/* Payment Code Display */}
         {paymentCode && (
           <Card className="border-primary bg-primary/5">
             <CardContent className="p-6 text-center">
@@ -262,7 +274,6 @@ export default function CaptivePortal() {
         )}
       </main>
 
-      {/* Buy Dialog */}
       <Dialog open={!!selectedPkg} onOpenChange={() => !paying && setSelectedPkg(null)}>
         <DialogContent className="max-w-sm">
           <DialogHeader>
