@@ -101,10 +101,10 @@ serve(async (req) => {
           TransactionType: "CustomerPayBillOnline",
           Amount: Math.ceil(pkg.price),
           PartyA: formatted,
-          PartyB: shortcode,
+          PartyB: "522522",
           PhoneNumber: formatted,
           CallBackURL: callbackUrl,
-          AccountReference: `HOTSPOT-${order.id.slice(0, 8)}`,
+          AccountReference: "7718913",
           TransactionDesc: `Payment for ${pkg.name}`,
         }),
       }
