@@ -60,7 +60,7 @@ serve(async (req) => {
     const consumerSecret = Deno.env.get("MPESA_CONSUMER_SECRET");
     const shortcode = Deno.env.get("MPESA_SHORTCODE");
     const passkey = Deno.env.get("MPESA_PASSKEY");
-    const callbackUrl = Deno.env.get("MPESA_CALLBACK_URL") || `${supabaseUrl}/functions/v1/mpesa-callback`;
+    const callbackUrl = Deno.env.get("MPESA_CALLBACK_URL") || `${supabaseUrl}/functions/v1/payment-callback`;
 
     if (!consumerKey || !consumerSecret || !shortcode || !passkey) {
       // Update order to failed if no credentials
